@@ -22,23 +22,36 @@ class channel(object):
                 usr = user(name)
                 usr.authed = True
                 usr.authedAs = auth
+                self.userlist.userList.append(usr)
             self.db.getUser(usr)
             self.voice(usr)
     
     def voice(self, usr):
         if usr.authed:
             if usr.authedAs in self.admins:
-                self.bot.write('PRIVMSG', ['Q'], 'CHANLEV ' + self.bot.channel + ' #' + usr.name + ' ' + '+o')
+                self.bot.write('PRIVMSG', ['Q'], 'CHANLEV ' + self.bot.channel + ' ' + usr.name + ' ' + '+o')
             elif usr.vouchedBy:
-                self.bot.write('PRIVMSG', ['Q'],  'CHANLEV ' + self.bot.channel + ' #' + usr.name + ' ' + '+v')
+                self.bot.write('PRIVMSG', ['Q'],  'CHANLEV ' + self.bot.channel + ' ' + usr.name + ' ' + '+v')
 
     def takeCommand(self, usr, msg):
         if msg.find(' ') > 0:
             action, cmd = msg.split(' ', 1)
         else:
             action, cmd = (msg, '')
-        
+        usr = self.userlist.findByChannelName(usr)
+        if usr:
+            if action == "!vouch" and len(cmd) > 0:
+                for usrname in cmd.split(' '):
+                    vouchee = self.userlist.findByChannelName(usrname)
+                    if vouchee:
+                        self.vouch(usr, vouchee)
 
+    def vouch(self, voucher, vouchee):
+        if voucher.authed and (voucher.vouchedBy or (voucher.authedAs in self.admins)):
+            if vouchee.authed and not vouchee.vouchedBy:
+                vouchee.vouchedBy = voucher.dbID
+                self.db.setUser(vouchee)
+                self.voice(vouchee)
         
 
 class userList(object):
@@ -59,7 +72,7 @@ class userList(object):
     def findByAuth (self, name):
         found = False
         for player in self.userList:
-            if player.auth == name:
+            if player.authedAs == name:
                 found = True
                 return player
         if not found:
@@ -154,9 +167,11 @@ class db(object):
         self.close()
 
     def setUser(self, user):
-      self.connect()
-      if user.dbID:
-        self.cur.execute("UPDATE 'users' SET name='" + str(user.name) + "', authed='" + str(user.authed) + "', authedAs='" + str(user.authedAs) + "', inGame='" + str(user.inGame) + "', vouchedBy='" + str(user.vouchedBy) + "', wotUsername='" + str(user.wotUsername) + "', tanks='" + str(user.tanks) + "' WHERE idusers='" + str(user.dbID)+"'")
+        self.connect()
+        if user.dbID:
+            self.cur.execute("UPDATE 'users' SET name='" + str(user.name) + "', authed='" + str(user.authed) + "', authedAs='" + str(user.authedAs) + "', inGame='" + str(user.inGame) + "', vouchedBy='" + str(user.vouchedBy) + "', wotUsername='" + str(user.wotUsername) + "', tanks='" + str(user.tanks) + "' WHERE idusers='" + str(user.dbID)+"'")
+            self.con.commit()
+        self.close()
 
 
     def buildTables(self):
