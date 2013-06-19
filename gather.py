@@ -1,16 +1,45 @@
 import sqlite3 as lite
 import sys
 
+
 class channel(object):
     """docstring for channel"""
     def __init__(self, bot):
         super(channel, self).__init__()
         self.bot = bot
         self.userlist = userList()
+        self.db = db()
+        self.admins = ['phood', 'klutch']
 
     def checkUsers(self):
-        for username in bot.nameList:
-            self.write('WHOIS', [username])
+        for username in self.bot.nameList:
+            self.bot.write('WHOIS', [username])
+
+    def updateUser(self, auth, name):
+        if not auth == 'Q':
+            usr = self.userlist.findByAuth(auth)
+            if not usr:
+                usr = user(name)
+                usr.authed = True
+                usr.authedAs = auth
+            self.db.getUser(usr)
+            self.voice(usr)
+    
+    def voice(self, usr):
+        if usr.authed:
+            if usr.authedAs in self.admins:
+                self.bot.write('PRIVMSG', ['Q'], 'CHANLEV ' + self.bot.channel + ' #' + usr.name + ' ' + '+o')
+            elif usr.vouchedBy:
+                self.bot.write('PRIVMSG', ['Q'],  'CHANLEV ' + self.bot.channel + ' #' + usr.name + ' ' + '+v')
+
+    def takeCommand(self, usr, msg):
+        if msg.find(' ') > 0:
+            action, cmd = msg.split(' ', 1)
+        else:
+            action, cmd = (msg, '')
+        
+
+        
 
 class userList(object):
     """docstring for userList"""
@@ -19,19 +48,31 @@ class userList(object):
         self.userList=[]
 
     def findByChannelName (self, name):
+        found = False
         for player in self.userList:
             if player.name == name:
+                found = True
                 return player
+        if not found:
+            return False
 
     def findByAuth (self, name):
+        found = False
         for player in self.userList:
             if player.auth == name:
+                found = True
                 return player
+        if not found:
+            return False
 
     def findByWotUsername (self, name):
+        found = False
         for player in self.userList:
             if player.wotUsername == name:
+                found = True
                 return player
+        if not found:
+            return False
 
 class user(object):
     """docstring for user"""
@@ -64,8 +105,10 @@ class db(object):
     
     def connect(self):
         try:
-            self.con = lite.connect('main.db')            
+            self.con = lite.connect('main.db')
+            self.con.row_factory = lite.Row         
             self.cur = self.con.cursor()
+
         except lite.Error, e:
             print "DATABASE ERROR!"
             sys.exit(1)
@@ -75,7 +118,7 @@ class db(object):
             self.con.close()
 
     def adduser(self, user):
-        sqlinsert = "INSERT INTO users (name, authed, authedAs, vouchedBy, wotUsername, tanks) VALUES ('"+str(user.name)+"', "+str(int(user.authed))+", '"+str(user.authedAs)+"', "+str(int(user.vouchedBy))+", '"+str(user.wotUsername)+"', '"+str(user.tanks)+"');"
+        sqlinsert = "INSERT INTO users (name, authed, authedAs) VALUES ('"+str(user.name)+"', "+str(int(user.authed))+", '"+str(user.authedAs)+"');"
         self.connect()
         self.cur.execute(sqlinsert)
         self.con.commit()
@@ -87,20 +130,34 @@ class db(object):
     def getUser(self, user):
         self.connect()
         if user.dbID:
-            self.cur.execute("SELECT count(*), idusers FROM 'users' WHERE idusers='"+user.dbID+"' LIMIT 0,1;")
+            self.cur.execute("SELECT count(*) as num, * FROM 'users' WHERE idusers='"+user.dbID+"' LIMIT 0,1;")
             userexists = self.cur.fetchone()
-            if userexists[0]:
+            if userexists['num']:
                 user.dbID = userexists[1]
         elif user.authed and user.authedAs:
-            self.cur.execute("SELECT count(*), idusers FROM 'users' WHERE authedAs='"+user.authedAs+"' LIMIT 0,1;")
+            self.cur.execute("SELECT count(*) as num, * FROM 'users' WHERE authedAs='"+user.authedAs+"' LIMIT 0,1;")
             userexists = self.cur.fetchone()
-            self.close()
-            if userexists[0] == 0:
+            if userexists['num'] == 0:
                 self.adduser(user)
             else:
-                user.dbID = userexists[1]
-
+                user.inGame = userexists['inGame']
+                user.vouchedBy = userexists['vouchedBy']
+                user.dbID = userexists['idusers']
+                user.wotUsername = userexists['wotUsername']
+                user.tanks = userexists['tanks']
+                user.wins = userexists['wins']
+                user.losses = userexists['losses']
+                user.draws = userexists['draws']
+                user.eff = userexists['eff']
+                user.winsix = userexists['winsix']
+                user.winrate = userexists['winrate']
         self.close()
+
+    def setUser(self, user):
+      self.connect()
+      if user.dbID:
+        self.cur.execute("UPDATE 'users' SET name='" + str(user.name) + "', authed='" + str(user.authed) + "', authedAs='" + str(user.authedAs) + "', inGame='" + str(user.inGame) + "', vouchedBy='" + str(user.vouchedBy) + "', wotUsername='" + str(user.wotUsername) + "', tanks='" + str(user.tanks) + "' WHERE idusers='" + str(user.dbID)+"'")
+
 
     def buildTables(self):
 
@@ -133,4 +190,3 @@ class db(object):
   "blueCaptain" INTEGER);""")
         self.close()
 
-        

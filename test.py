@@ -53,7 +53,7 @@ class Bot:
         self.modesChecked = True
 
     def setModes(self):
-        self.write('MODE', [self.channel, '+tnCNrm'])
+        self.write('MODE', [self.channel, '+tnCNr'])
         #self.irc.send('MODE %s +tnCNrm \r\n' % self.channel)
         self.modesSet = True
 
@@ -86,6 +86,12 @@ class Bot:
         arguments = filter(None, arguments)
 
         print user, cmd, channel, arguments, msg
+
+        if user and cmd == "PRIVMSG" and channel == self.channel:
+            if msg.startswith("!"):
+                self.gather.takeCommand(user, msg)
+
+
 
         if user == "Q":
             if cmd == "NOTICE":
@@ -122,11 +128,16 @@ class Bot:
             for usrname in msg.split(' '):
                 if usrname.startswith(('+', '@')):
                     usrname = usrname[1:]
-                    self.nameList.append(usrname)
+                self.nameList.append(usrname)
             self.gather.checkUsers()
 
         if typ == 330:
+            self.gather.updateUser(arguments[1], arguments[0])
             print arguments[0] + 'is authed as: '+ arguments[1]
+
+        if typ == 324 and self.channel in arguments:
+            self.setModes()
+
 
 
         
@@ -146,6 +157,7 @@ class Bot:
        
 
         for line in data.split('\r\n'):
+            #print line
             if re.match(r':([\S]+)!([\S]+) ([\S]+)[\s]?(#[\S]+)?[\s]?(.+)?', line):
                 test = re.match(r':([\S]+)!([\S]+) ([\S]+)[\s]?(#[\S]+)?[\s]?(.+)?', line)
                 #print "detected", str(test.group(1)) + ' ' + str(test.group(3)) + ' ' + str(test.group(4))
@@ -171,12 +183,7 @@ class Bot:
                         self.join_channel()
                     else:
                         if self.isOpped:
-                            if not self.modesChecked:
-                                self.checkModes()
-                            if self.modesChecked and not self.modesSet:
-                                self.setModes()
-                            # if not self.checkedNames:
-                            #     state.checkUsers()
+                            pass
 
 bot = Bot()
 bot.nickname()
