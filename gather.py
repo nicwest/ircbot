@@ -1,6 +1,33 @@
 import sqlite3 as lite
 import sys
+import time
 
+#color testing?
+colorTests = True;
+
+
+#Translation strings (uses {{varible}} and _F(string, [varibles,...]) for adding varibles to strings)
+_L = {
+        'leftAlert': '!!!!' + ('\t'*14),
+        'rightAlert': ('\t'*14)+'!!!!',
+        'loading': 'I\'M LOADING UP',
+        'userRmGame': 'USER {{1}} REMOVED FROM GAME ID #{{2}}'
+    }
+
+#colors for different types of message
+_C = {
+        'alert': (1, 13),
+        'gameMsg': (0, 1),
+        'gameError': (4, 1),
+        'gameWarning': (8, 1),
+        'gameComfirm': (9, 1),
+    }
+
+#String Formatter
+def _F (string, arg):
+    finder = re.compile(r'\{\{([^\}]+)\}\}')
+    output = re.sub(finder, lambda i: arg[i.group(1)] if i.group(1) in arg else i.group(0), string)
+    return ouput
 
 class channel(object):
     """docstring for channel"""
@@ -8,10 +35,18 @@ class channel(object):
         super(channel, self).__init__()
         self.bot = bot
         self.userlist = userList()
+        self.gamelist = gameList()
         self.db = db()
         self.admins = ['phood', 'klutch']
 
     def checkUsers(self):
+        if colorTests:
+            for color in _C:
+                textColor, bgColor = _C[color]
+                self.bot.sendChannelMsg(_L['leftAlert']+color+_L['rightAlert'], textColor, bgColor)
+        else:
+            textColor, bgColor = _C['alert']
+            self.bot.sendChannelMsg(_L['leftAlert']+_L['loading']+_L['rightAlert'], textColor, bgColor)
         for username in self.bot.nameList:
             self.bot.write('WHOIS', [username])
 
@@ -19,7 +54,7 @@ class channel(object):
         if not auth == 'Q':
             usr = self.userlist.findByAuth(auth)
             if not usr:
-                usr = user(name)
+                usr = User(name)
                 usr.authed = True
                 usr.authedAs = auth
                 self.userlist.userList.append(usr)
@@ -52,7 +87,25 @@ class channel(object):
                 vouchee.vouchedBy = voucher.dbID
                 self.db.setUser(vouchee)
                 self.voice(vouchee)
-        
+
+    def userNick(self, usr, msg):
+        player = self.userList.findByChannelName(usr)
+        if player:
+            player.name = msg
+            self.db.setUser(player)
+
+    def userOff(self, cmd, usr, msg):
+        player = self.userlist.findByChannelName(usr)
+        if player:
+            for game in self.gamelist.gamelist:
+                if player in game:
+                    game.remove(player)
+                    textColor, bgColor = _C['gameError']
+                    self.bot.sendChannelMsg(_F(_L['userRmGame'], [player.name, game.id]))
+
+            self.userlist.remove(player)
+            del player
+
 
 class userList(object):
     """docstring for userList"""
@@ -87,10 +140,10 @@ class userList(object):
         if not found:
             return False
 
-class user(object):
-    """docstring for user"""
+class User(object):
+    """docstring for User"""
     def __init__(self, name):
-        super(user, self).__init__()
+        super(User, self).__init__()
         self.name = name
         self.authed = False
         self.authedAs = None
@@ -106,6 +159,28 @@ class user(object):
         self.winsix = 0
         self.winrate = 0
 
+class gameList(object):
+    """docstring for gameList"""
+    def __init__(self):
+        super(gameList, self).__init__()
+        self.gamelist = []
+
+class Game(object):
+    """docstring for game"""
+    def __init__(self, creator):
+        super(game, self).__init__()
+        self.creator = creator
+        self.idgames = None
+        self.status = 0
+        self.date = time.time()
+        self.players = []
+        self.redTeam = []
+        self.blueTeam = []
+        self.winner = None
+        self.redCaptain = None
+        self.blueCaptain = None
+        
+        
 
 class db(object):
     """docstring for db"""
@@ -130,46 +205,46 @@ class db(object):
         if self.con:
             self.con.close()
 
-    def adduser(self, user):
-        sqlinsert = "INSERT INTO users (name, authed, authedAs) VALUES ('"+str(user.name)+"', "+str(int(user.authed))+", '"+str(user.authedAs)+"');"
+    def adduser(self, usr):
+        sqlinsert = "INSERT INTO users (name, authed, authedAs) VALUES ('"+str(usr.name)+"', "+str(int(usr.authed))+", '"+str(usr.authedAs)+"');"
         self.connect()
         self.cur.execute(sqlinsert)
         self.con.commit()
         rowid = self.cur.lastrowid
         print rowid
         self.close()
-        user.dbID = rowid
+        usr.dbID = rowid
 
-    def getUser(self, user):
+    def getUser(self, usr):
         self.connect()
-        if user.dbID:
-            self.cur.execute("SELECT count(*) as num, * FROM 'users' WHERE idusers='"+user.dbID+"' LIMIT 0,1;")
+        if usr.dbID:
+            self.cur.execute("SELECT count(*) as num, * FROM 'users' WHERE idusers='"+str(usr.dbID)+"' LIMIT 0,1;")
             userexists = self.cur.fetchone()
             if userexists['num']:
-                user.dbID = userexists[1]
-        elif user.authed and user.authedAs:
-            self.cur.execute("SELECT count(*) as num, * FROM 'users' WHERE authedAs='"+user.authedAs+"' LIMIT 0,1;")
+                usr.dbID = userexists[1]
+        elif usr.authed and usr.authedAs:
+            self.cur.execute("SELECT count(*) as num, * FROM 'users' WHERE authedAs='"+str(usr.authedAs)+"' LIMIT 0,1;")
             userexists = self.cur.fetchone()
             if userexists['num'] == 0:
-                self.adduser(user)
+                self.adduser(usr)
             else:
-                user.inGame = userexists['inGame']
-                user.vouchedBy = userexists['vouchedBy']
-                user.dbID = userexists['idusers']
-                user.wotUsername = userexists['wotUsername']
-                user.tanks = userexists['tanks']
-                user.wins = userexists['wins']
-                user.losses = userexists['losses']
-                user.draws = userexists['draws']
-                user.eff = userexists['eff']
-                user.winsix = userexists['winsix']
-                user.winrate = userexists['winrate']
+                usr.inGame = userexists['inGame']
+                usr.vouchedBy = userexists['vouchedBy']
+                usr.dbID = userexists['idusers']
+                usr.wotUsername = userexists['wotUsername']
+                usr.tanks = userexists['tanks']
+                usr.wins = userexists['wins']
+                usr.losses = userexists['losses']
+                usr.draws = userexists['draws']
+                usr.eff = userexists['eff']
+                usr.winsix = userexists['winsix']
+                usr.winrate = userexists['winrate']
         self.close()
 
-    def setUser(self, user):
+    def setUser(self, usr):
         self.connect()
-        if user.dbID:
-            self.cur.execute("UPDATE 'users' SET name='" + str(user.name) + "', authed='" + str(user.authed) + "', authedAs='" + str(user.authedAs) + "', inGame='" + str(user.inGame) + "', vouchedBy='" + str(user.vouchedBy) + "', wotUsername='" + str(user.wotUsername) + "', tanks='" + str(user.tanks) + "' WHERE idusers='" + str(user.dbID)+"'")
+        if usr.dbID:
+            self.cur.execute("UPDATE 'users' SET name='" + str(usr.name) + "', authed='" + str(usr.authed) + "', authedAs='" + str(usr.authedAs) + "', inGame='" + str(usr.inGame) + "', vouchedBy='" + str(usr.vouchedBy) + "', wotUsername='" + str(usr.wotUsername) + "', tanks='" + str(usr.tanks) + "' WHERE idusrs='" + str(usr.dbID)+"'")
             self.con.commit()
         self.close()
 
@@ -197,11 +272,15 @@ class db(object):
   "idgames" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   "status" INTEGER,
   "date" INTEGER,
-  "players" TEXT,
-  "redTeam" TEXT,
-  "blueTeam" TEXT,
   "winner" INTEGER,
   "redCaptain" INTEGER,
-  "blueCaptain" INTEGER);""")
+  "blueCaptain" INTEGER,
+  "creator" INTEGER);""")
+
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS "game_users" (
+  "idgameusers" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  "game" INTEGER,
+  "date" INTEGER,
+  "user" INTEGER);""")
         self.close()
 

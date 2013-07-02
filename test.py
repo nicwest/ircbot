@@ -1,6 +1,10 @@
 import socket
-import gather
 import re
+
+import gather
+
+#debugging = True
+debugging = False
 
 class Bot:
     def __init__(self, server='irc.uk.quakenet.org', port=6667, channel='#wot-gathers', nick='phood-bot', Qpassword='8ehrkzCegS', realname = 'TEST GATHER BOT'):
@@ -12,12 +16,7 @@ class Bot:
         self.nick = nick
         self.Qpassword = Qpassword
         self.realname = realname
-        self.gather = gather.channel(self)
         self.authSent = False
-
-        self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.irc.connect( (server, port ) )
-        self.data = self.irc.recv ( 4096 )
 
         self.isConnected = False
         self.joinedChannel = False
@@ -28,6 +27,13 @@ class Bot:
         self.checkedNames = False
 
         self.nameList = []
+
+
+        self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.irc.connect( (server, port ) )
+        self.data = self.irc.recv ( 4096 )
+
+        self.gather = gather.channel(self)
         
     def nickname(self):
         self.write('NICK', [self.nick])
@@ -57,6 +63,35 @@ class Bot:
         #self.irc.send('MODE %s +tnCNrm \r\n' % self.channel)
         self.modesSet = True
 
+    def colorise (self, input, txt=None, bg=None, otxt=None, obg=None):
+        output = ''
+        if txt is not None or bg is not None:
+            output = '\x03'
+            if txt is not None:
+                output = output + str(txt)
+                if bg is not None:
+                    output = output + ',' + str(bg)
+            if bg is not None and (txt is None):
+                output = output + '1,'+str(bg)
+        output = output + str(input)
+
+        if txt is not None or bg is not None:
+            output = output + '\x03'
+            if otxt is not None or obg is not None:
+                if otxt is not None:
+                    output = output + str(otxt)
+                    if obg is not None:
+                        output = output + ',' + str(obg)
+                if obg is not None and (otxt is None):
+                    output = output + '1,'+str(obg)
+        return output
+
+    def sendChannelMsg(self, msg, txt=None, bg=None):
+        if txt or bg:
+            msg = self.colorise(msg, txt, bg, txt, bg)
+
+        self.write('PRIVMSG', [self.channel], msg)
+
     def write(self, cmd=None, arguments=[], msg=None):
         sendstr = ""
         if cmd and len(arguments):
@@ -65,8 +100,7 @@ class Bot:
                 sendstr = sendstr + " " + str(arg)
             if msg:
                 sendstr = sendstr + " :"+str(msg)
-            sendstr= sendstr + " \r\n"
-            print sendstr
+            sendstr= sendstr + "\r\n"
             self.irc.send(sendstr)
 
     def handleResponse(self, match):
@@ -85,13 +119,25 @@ class Bot:
 
         arguments = filter(None, arguments)
 
-        print user, cmd, channel, arguments, msg
+        if debugging:
+            print user, cmd, channel, arguments, msg
 
-        if user and cmd == "PRIVMSG" and channel == self.channel:
-            if msg.startswith("!"):
-                self.gather.takeCommand(user, msg)
+        if user:
+            if channel == self.channel:
+                if cmd == "PRIVMSG":
+                    if msg.startswith("!"):
+                        self.gather.takeCommand(user, msg)
+                if cmd == "PART":
+                    self.gather.userOff(cmd, user, msg)
 
+                if cmd == "JOIN":
+                    self.write('WHOIS', [user])
 
+            if cmd == "QUIT":
+                self.gather.userOff(cmd, user, msg)
+
+            if cmd == "NICK":
+                self.gather.userNick(user, msg)
 
         if user == "Q":
             if cmd == "NOTICE":
@@ -118,7 +164,8 @@ class Bot:
                 msg = datasp[1]
         arguments = filter(None, arguments)
 
-        print typ, user, arguments, msg
+        if debugging:
+            print typ, user, arguments, msg
 
         if typ == 221 and user == self.nick and "+i" in arguments:
             self.isConnected = True
@@ -133,40 +180,28 @@ class Bot:
 
         if typ == 330:
             self.gather.updateUser(arguments[1], arguments[0])
-            print arguments[0] + 'is authed as: '+ arguments[1]
+            print arguments[0] + ' is authed as: '+ arguments[1]
 
         if typ == 324 and self.channel in arguments:
             self.setModes()
 
-
-
-        
     def work(self):
-        data = self.irc.recv ( 4096 )
-
-        if data.find('PING') != -1:
-            self.write('PONG', [data.split()[1]])
-            #self.irc.send('PONG ' + data.split()[1] + '\r\n')
-            print "replied to ping"
-            
-        if data.find(':!quit') != -1:
-            datasp = data.split(' :')[0]
-            if datasp.find('-214EEDC3.dsl.irvnca.sbcglobal.net'):
-                self.irc.send('QUIT \r\n')
-
-       
+        data = self.irc.recv ( 4096 )    
 
         for line in data.split('\r\n'):
-            #print line
+
+            if re.match(r'PING :(.*)', line):
+                test = re.match(r'PING :(.*)', line)
+                self.write('PONG', [test.group(1)])
+                print "Replied to Server Ping"
+
             if re.match(r':([\S]+)!([\S]+) ([\S]+)[\s]?(#[\S]+)?[\s]?(.+)?', line):
                 test = re.match(r':([\S]+)!([\S]+) ([\S]+)[\s]?(#[\S]+)?[\s]?(.+)?', line)
-                #print "detected", str(test.group(1)) + ' ' + str(test.group(3)) + ' ' + str(test.group(4))
                 self.handleResponse(test)
 
 
             elif re.match(r':([\S]+) ([\d]+) ([\S]+)(.+)?', line):
                 test = re.match(r':([\S]+) ([\d]+) ([\S]+)(.+)?', line)
-                #print "detectedSrv", str(test.group(2)) + ' ' + str(test.group(3)) + ' ' + str(test.group(4)) + ' ' + str(test.group(5))
                 self.handleSrvResponse(test)
             else:
                 #print "bugger"
