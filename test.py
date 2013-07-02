@@ -3,7 +3,7 @@ import re
 
 import gather
 
-#debugging = True
+# debugging = True
 debugging = False
 
 class Bot:
@@ -91,6 +91,12 @@ class Bot:
             msg = self.colorise(msg, txt, bg, txt, bg)
 
         self.write('PRIVMSG', [self.channel], msg)
+
+    def sendChannelNotice(self, name, msg, txt=None, bg=None):
+        if txt or bg:
+            msg = self.colorise(msg, txt, bg, txt, bg)
+
+        self.write('CNOTICE', [name, self.channel], msg)
 
     def write(self, cmd=None, arguments=[], msg=None):
         sendstr = ""
