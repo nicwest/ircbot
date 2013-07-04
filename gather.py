@@ -19,7 +19,9 @@ _L = {
         'gameFormingStatus': 'GAME ID #{{0}} {{1}}/{{2}} PLAYERS, TYPE !JOIN TO PLAY',
         'noGame': 'NO GAME CURRENTLY FORMING. TYPE !START TO START ONE',
         'gameFull': 'GAME IS FULL, PLEASE WAIT FOR CURRENT GAME TO FINISH FORMING BEFORE STARTING A NEW ONE WITH !START',
+        'gameEnded': 'GAME #{{1}} FINISHED: {{2}}',
         'alreadyInGame': 'YOU ARE ALREADY IN A GAME YOU DICKBAG!',
+        'creatorLeftGame': 'CREATOR: {{1}}, LEFT CHANNEL BEFORE GAME STARTED',
     }
 
 #colors for different types of message
@@ -132,9 +134,11 @@ class channel(object):
                 newgame = Game(player)
                 self.db.addGame(newgame)
                 self.gamelist.forming = newgame
+                self.gamelist.gamelist.append(newgame)
 
                 textColor, bgColor = _C['gameMsg']
                 self.bot.sendChannelMsg(_F(_L['leftAlert']+_L['gameForming']+_L['rightAlert'], [newgame.dbID, player.name]), textColor, bgColor)
+                print "User #" + str(player.dbID) + " STARTS GAME #" + str(newgame.dbID)
 
                 self.joinGame(player)
             else:
@@ -156,6 +160,7 @@ class channel(object):
                     self.db.addPlayerToGame(player, game)
                     self.db.updatePlayerGameStatus(game, player, 1)
                     self.gameStatus(game)
+                    print "User #" + str(player.dbID) + " JOINS GAME #" + str(game.dbID)
                 else:
                     textColor, bgColor = _C['gameWarning']
                     self.bot.sendChannelNotice(player.name, _L['leftAlert']+_L['alreadyInGame']+_L['rightAlert'], textColor, bgColor)
@@ -166,31 +171,57 @@ class channel(object):
             textColor, bgColor = _C['channelMsg']
             self.bot.sendChannelMsg(_L['leftAlert']+_L['noGame']+_L['rightAlert'], textColor, bgColor)
 
+    def endGame(self, game, status, reason):
+        if game:
+            if status == 0:
+                game.status = 0
+                for player in game.players:
+                    self.leaveGame(player, game, True)
+                self.db.setGame(game)
+                textColor, bgColor = _C['gameError']
 
-    def leaveGame(self, player):
+            self.bot.sendChannelMsg(_F(_L['leftAlert']+_L['gameEnded']+_L['rightAlert'], [game.id, reason]), textColor, bgColor)
+
+            print "GAME #" + str(newgame.dbID) + " ENDED DUE TO: " + str(reason)
+
+    def leaveGame(self, player, game, silent=False):
         if player:
-            for game in self.gamelist.gamelist:
+            if game: 
                 if player in game.players:
                     if player in game.blueTeam:
                         game.blueTeam.remove(player)
                     if player in game.redTeam:
                         game.redTeam.remove(player)
                     game.remove(player)
-                    player.status = 0
-
-                    self.db.setUser(player)
                     self.db.updatePlayerGameStatus(game, player, 0)
 
-                    textColor, bgColor = _C['gameError']
-                    self.bot.sendChannelMsg(_F(_L['leftAlert']+_L['userRmGame']+_L['rightAlert'], [player.name, game.id]), textColor, bgColor)
-                    self.gameStatus(game)
+                    if not silent:
+                        textColor, bgColor = _C['gameError']
+                        self.bot.sendChannelMsg(_F(_L['leftAlert']+_L['userRmGame']+_L['rightAlert'], [player.name, game.id]), textColor, bgColor)
+                        self.gameStatus(game)
+
+                    print "USER #" + str(player.dbID) + " LEAVES GAME #" + str(game.dbID)
+
+            player.status = 0
+            self.db.setUser(player)
 
     def userOff(self, cmd, usr, msg):
         player = self.userlist.findByChannelName(usr)
         if player:
-            self.leaveGame(player)
-            self.userlist.remove(player)
+            for game in self.gamelist.gamelist:
+                if game.status < 2:
+                    if player == game.creator:
+                        self.endGame(game, 0, _F(_L['creatorLeftGame'], [player.name]))
+                    else:
+                        self.leaveGame(player, game)
+
+            player.status = 0
+            self.db.setUser(player)
+            self.userlist.userList.remove(player)
+
+            print "USER #" + str(player.dbID) + " LEAVES CHANNEL REASON: " + str(msg)
             del player
+
 
 
 class userList(object):
@@ -258,6 +289,11 @@ class Game(object):
         super(Game, self).__init__()
         self.creator = creator
         self.dbID = None
+        #STATUS VALUES
+        # 0 = default/neverformed
+        # 1 = forming
+        # 2 = started
+        # 3 = finished
         self.status = 0
         self.date = time.time()
         self.players = []
@@ -298,7 +334,6 @@ class db(object):
         self.cur.execute(sqlinsert)
         self.con.commit()
         rowid = self.cur.lastrowid
-        print rowid
         self.close()
         game.dbID = rowid
 
@@ -333,7 +368,6 @@ class db(object):
         self.cur.execute(sqlinsert)
         self.con.commit()
         rowid = self.cur.lastrowid
-        print rowid
         self.close()
         usr.dbID = rowid
 
