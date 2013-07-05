@@ -74,7 +74,14 @@ class channel(object):
                 usr.authed = True
                 usr.authedAs = auth
                 self.userlist.userList.append(usr)
+
             self.db.getUser(usr)
+
+            for game in self.gamelist.gamelist:
+                if usr in game.players and 1 < game.status < 4:
+                    usr.status == 1
+                    self.db.setUser(usr)
+
             self.voice(usr)
     
     def voice(self, usr):
@@ -93,13 +100,16 @@ class channel(object):
         usr = self.userlist.findByChannelName(usr)
         action = action.lower()
         if usr and usr.vouchedBy:
+
             if action == "!vouch" and len(cmd) > 0:
                 for usrname in cmd.split(' '):
                     vouchee = self.userlist.findByChannelName(usrname)
                     if vouchee:
                         self.vouch(usr, vouchee)
+
             if action == "!start":
                 self.startGame(usr)
+
             if action == "!join":
                 self.joinGame(usr)
 
@@ -109,6 +119,7 @@ class channel(object):
                 vouchee.vouchedBy = voucher.dbID
                 self.db.setUser(vouchee)
                 self.voice(vouchee)
+                print "USER #" + voucher.dbID +" VOUCHES FOR USER #" + vouchee.dbID
 
     def userNick(self, usr, msg):
         player = self.userList.findByChannelName(usr)
@@ -195,6 +206,9 @@ class channel(object):
                     game.remove(player)
                     self.db.updatePlayerGameStatus(game, player, 0)
 
+                    if not player in self.userlist.userList:
+
+
                     if not silent:
                         textColor, bgColor = _C['gameError']
                         self.bot.sendChannelMsg(_F(_L['leftAlert']+_L['userRmGame']+_L['rightAlert'], [player.name, game.id]), textColor, bgColor)
@@ -215,12 +229,16 @@ class channel(object):
                     else:
                         self.leaveGame(player, game)
 
-            player.status = 0
-            self.db.setUser(player)
-            self.userlist.userList.remove(player)
+            if player.status == 0:
+                self.db.setUser(player)
+                self.userlist.userList.remove(player)
+                del player
+            else:
+                player.status = -1
+                self.db.setUser(player)
+
 
             print "USER #" + str(player.dbID) + " LEAVES CHANNEL REASON: " + str(msg)
-            del player
 
 
 
@@ -292,8 +310,9 @@ class Game(object):
         #STATUS VALUES
         # 0 = default/neverformed
         # 1 = forming
-        # 2 = started
-        # 3 = finished
+        # 2 = picking
+        # 3 = started
+        # 4 = finished
         self.status = 0
         self.date = time.time()
         self.players = []
@@ -343,16 +362,16 @@ class db(object):
             self.cur.execute("SELECT count(*) as num, * FROM 'games' WHERE idgames='"+str(game.dbID)+"' LIMIT 0,1;")
             gameexists = self.cur.fetchone()
             if gameexists['num']:
-                usr.creator = gameexists['inGame']
-                usr.dbID = gameexists['vouchedBy']
-                usr.status = gameexists['idusers']
-                usr.date = gameexists['wotUsername']
-                usr.players = gameexists['tanks']
-                usr.redTeam = gameexists['wins']
-                usr.blueTeam = gameexists['losses']
-                usr.winner = gameexists['draws']
-                usr.redCaptain = gameexists['eff']
-                usr.blueCaptain = gameexists['winsix']
+                game.creator = gameexists['inGame']
+                game.dbID = gameexists['vouchedBy']
+                game.status = gameexists['idusers']
+                game.date = gameexists['wotUsername']
+                game.players = gameexists['tanks']
+                game.redTeam = gameexists['wins']
+                game.blueTeam = gameexists['losses']
+                game.winner = gameexists['draws']
+                game.redCaptain = gameexists['eff']
+                game.blueCaptain = gameexists['winsix']
         self.close()
 
     def setGame(self, game):
@@ -428,8 +447,29 @@ class db(object):
             self.con.commit()
         self.close()
 
-    def buildTables(self):
+    def getGamePlayers(self, game):
+        players = []
+        self.connect()
+        if game.dbID:
+            for player in self.cur.execute("SELECT user FROM game_users WHERE game='"+str(game.dbID)+"' AND status > 0")
+                
 
+    def getActiveGames(self):
+        self.connect()
+        players = []
+        games = []
+        forming = None
+
+        for dbgame in self.curr.execute("SELECT idgames, status FROM games WHERE status > '0' and status < '4'")
+            game = Game(None)
+            game.status = dbgame['status']
+            game.dbID = dbgame['idgames']
+            if 0 < game.status < 3:
+                self.getGame(game)
+
+        
+
+    def buildTables(self):
         self.connect()
         self.cur.execute("""CREATE TABLE IF NOT EXISTS `users` (
   "idusers" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
